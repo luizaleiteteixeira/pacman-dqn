@@ -119,10 +119,67 @@ project's own instructions to keep large checkpoints local or in a release.
   encouraging but noisy — game-to-game raw scores swing from ~300 to ~1,300 (see the dashboard's left
   panel) with no clear plateau, so this run demonstrates that learning is happening, not that the
   policy is stable or close to converged.
-- **One next experiment**: I would extend `EPISODES` to 100 (the notebook's own default) with the
-  same exploration and learning rate, since the training-loss curve here was still rising at episode
-  25 rather than flattening — a longer run is the most direct way to see whether the improvement
-  trend in the score continues or plateaus, before touching any other hyperparameter.
+- **One next experiment (tried — see below)**: my original plan was to extend `EPISODES` well beyond
+  25 to see whether the improvement trend continued. I actually ran this experiment (twice); the
+  result was a genuine, honestly-reported negative one — see "Additional experiments" below.
+
+### Additional experiments: does more training actually help here?
+
+After the 25-episode submission above, I tried to push the score further for the class leaderboard by
+training much longer. Both extra attempts are **not** the submitted result — the 25-episode run above
+remains the official submission — but they're included here because the assignment explicitly asks to
+"report failed runs or a lack of improvement honestly," and because this negative result is itself an
+informative finding about the notebook's fixed classroom DQN.
+
+| Attempt | Episodes | Replay buffer | Exploration | Learning rate | Mean trained score (same 5 seeds) |
+|---|---|---|---|---|---|
+| **Submitted** | 25 | 5,000 (default) | 0.10 | 0.0001 | **772.0** |
+| Extra #1 | 1,000 | 5,000 (default) | 0.10 | 0.0001 | 590.0 |
+| Extra #2 | 1,000 | 20,000 (4× default) | 0.10 | 0.0001 | 616.0 |
+
+**What I found:** training for 1,000 episodes instead of 25 did *not* beat the shorter run — it scored
+lower, twice. Looking at the training dashboards for both longer runs (below), the raw per-episode
+score climbs quickly and then plateaus into a noisy band (roughly 600–900) by around episode 100–150,
+and never trends upward after that; the mean update loss simultaneously *rises* to ~0.10–0.15 and
+stays there instead of settling down. That's a sign of the value estimates oscillating rather than
+converging — not a sign that the agent keeps getting better with more games.
+
+My working theory was that the small, fixed 5,000-transition replay buffer was the bottleneck: at
+this notebook's decision rate, 5,000 transitions is only about **8 episodes of memory**, so 1,000
+episodes of training mostly means constantly overwriting recent experience rather than accumulating
+it. I re-ran with the buffer quadrupled to 20,000 (~33 episodes of memory) and kept episodes,
+exploration, and learning rate identical (Extra #2). It helped a little (590 → 616) but the same
+early plateau and rising loss showed up again — so buffer size alone isn't the full explanation
+either. The more likely underlying cause is architectural: this is a vanilla single-network DQN
+(no Double DQN, no annealed exploration schedule, small conv net), which is known to overestimate
+action values and plateau early on Atari games without those additions — exactly what the notebook's
+own README calls out ("not a benchmark-scale DQN reproduction").
+
+**Conclusion:** the 25-episode run's 772 mean score looks less like "25 episodes was enough" and more
+like a lucky snapshot taken before the noisy plateau set in — evaluating the *final* checkpoint of a
+short run happened to land on a good point in an otherwise oscillating score curve. I chose **not** to
+chase a higher number by hand-picking whichever periodic checkpoint happens to score best on the same
+5 fixed evaluation seeds the leaderboard uses — that would be overfitting to the evaluation set itself
+rather than genuinely improving the policy, which defeats the point of a fair before/after comparison.
+
+Dashboards for both extra attempts (compare to the submitted run's dashboard above — note the y-axis
+scale and the loss panel in particular):
+
+| Extra #1 — 1,000 episodes, 5,000 buffer (mean 590.0) | Extra #2 — 1,000 episodes, 20,000 buffer (mean 616.0) |
+|---|---|
+| ![Extra 1 dashboard](results/extra_experiments/1000ep_buffer5000/training_dashboard.png) | ![Extra 2 dashboard](results/extra_experiments/1000ep_buffer20000/training_dashboard.png) |
+
+Full data: [`results/extra_experiments/1000ep_buffer5000/comparison.json`](results/extra_experiments/1000ep_buffer5000/comparison.json)
+and [`results/extra_experiments/1000ep_buffer20000/comparison.json`](results/extra_experiments/1000ep_buffer20000/comparison.json)
+(each folder also has `config.json` and `training_summary.json`). Both extra runs completed in full
+(1,000/1,000 episodes, status `"completed"`, no interruptions) — elapsed ~45 minutes each on the same
+Apple Silicon MPS hardware as the submitted run.
+
+**A better next experiment, if I had more time**: rather than just adding more episodes or replay
+capacity, the more principled fix suggested by this evidence would be Double DQN (decoupling action
+selection from action evaluation when computing the target) to address the value-overestimation
+pattern visible in the rising loss curves — a small, well-justified change to `learn()`'s target
+computation, not just a hyperparameter tweak.
 
 ## Open and run
 
